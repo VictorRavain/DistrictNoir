@@ -1,4 +1,5 @@
 import random
+import inquirer
 import string
 from collections import Counter
 from typing import List
@@ -7,7 +8,8 @@ from .card import Card
 from .player import Player
 
 class Game:
-    def __init__(self, name1: string, name2: string):
+    def __init__(self, game_id: int, name1: string, name2: string):
+        self.game_id = game_id
         self.player1 = Player(name1)
         self.player2 = Player(name2)
         self.deck = Deck()
@@ -15,6 +17,7 @@ class Game:
     
     def start_game(self):
         """Start the game and handle game flow."""
+        self.game_log = {"game_id": 1, "steps": [], "final_result": {}}
         self.game_line.extend(self.deck.pick_random_cards(2))
         # Manche 1 :
         self.play_set()
@@ -24,10 +27,22 @@ class Game:
         self.play_set()
         # Manche 4 :
         self.play_set()
-        return self.end_set()
+        self.end_set()
+        return self.game_log
 
     def play_set(self):
         """Play a single set in the game."""
+        # Log the beginning of the set
+        set_log = {
+            "set_id": len(self.game_log["steps"]) + 1,
+            "initial_state": {
+                "player1_hand": self.player1.hand.copy(),
+                "player2_hand": self.player2.hand.copy(),
+                "game_line": self.game_line.copy()
+            },
+            "actions": []
+        }
+
         # Deal initial cards
         self.player1.draw_cards(self.deck.pick_random_cards(5))
         self.player2.draw_cards(self.deck.pick_random_cards(5))
@@ -37,48 +52,45 @@ class Game:
         self.player2.has_take = False
 
         # Play until a set-ending condition is met
-        print("set:")
         while not self.check_city_victory() and not self.is_set_over():
             # Player 1's turn
-            self.play_turn(self.player1)
+            set_log["actions"].append(self.play_turn(self.player1))
             # Player 2's turn
-            self.play_turn(self.player2)
+            set_log["actions"].append(self.play_turn(self.player2))
+    
+        # Append the set log to the game log
+        self.game_log["steps"].append(set_log)
     
     def play_turn(self, player: Player):
         """Handle the actions taken by the player on their turn."""
-        if len(player.hand) == 0: # If player has no more card available, he has to take
-            action = "take"
-        else:
-            # Randomly decide the action, respecting constraints
-            if player.has_take:  # Player has already "taken"; only "play" is possible
-                action = "play"
-            else:
-                # Randomly choose between "play" and "take"
-                action = random.choices(["play", "take"], weights=[4, 1])[0]
-                
-        print(player.name,":",action)
-        if action=="play":
-            played_card = player.play_card()
-            self.game_line.append(played_card)
-        elif action == "take" and not player.has_take:
-            self.collect_cards(player)
-            player.has_take = True
-        else:
-            print("Invalid action. Choose either 'play' or 'take'.")
+        turn_log = {"player": player.name, "action": "", "result": {}}
 
-    def collect_cards(self, player: Player):
-        """
-        Allow the player to take up to the last 5 cards from the center line.
-        If there are fewer than 5 cards in the game line, take all of them.
-        """
-        # Determine the number of cards to take (max 5 or all available)
-        num_cards_to_take = min(5, len(self.game_line))
-        # Extract the last 'num_cards_to_take' cards
-        cards_to_take = self.game_line[-num_cards_to_take:]
-        # Remove the extracted cards from the game line
-        self.game_line = self.game_line[:-num_cards_to_take]
-        # Add the cards to the player's collected cards
-        player.take_cards(cards_to_take)
+        print(f"\n{player.name}'s Turn!")
+        print(f"Your hand: {player.hand}")
+        print(f"Game line: {self.game_line}")
+
+        # Show a menu to let the player choose an action
+        action = player.choose_action()
+                
+        if action=="play":
+            played_card = player.choose_card_to_play()
+            self.game_line.append(played_card)
+            print(f"You played: {played_card}")
+            turn_log["action"] = "play"
+            turn_log["result"] = {
+                "played_card": played_card,
+                "updated_game_line": self.game_line.copy()
+            }
+        elif action == "take":
+            self.game_line = player.collect_cards(self.game_line)
+            player.has_take = True
+            print(f"You collected cards. Your collected cards: {player.collected_cards}")
+            turn_log["action"] = "take"
+            turn_log["result"] = {
+                "collected_cards": player.collected_cards.copy()
+            }
+
+        return turn_log
 
     def is_set_over(self):
         """
@@ -93,20 +105,24 @@ class Game:
         Calculate scores and determine the winner.
         Return the scores and the detail of player's collected card.
         """
-        self.player1_score = self.calculate_score(self.player1, self.player2)
-        self.player2_score = self.calculate_score(self.player2, self.player1)
+        self.player1.score = self.calculate_score(self.player1, self.player2)
+        self.player2.score = self.calculate_score(self.player2, self.player1)
 
-        # print(f"{self.player1.name}'s score: {self.player1_score}")
-        # print(f"{self.player2.name}'s score: {self.player2_score}")
+        winner = ""
+        if self.player1.score > self.player2.score:
+            winner = self.player1.name
+        elif self.player2.score > self.player1.score:
+            winner = self.player2.name
 
-        # if self.player1_score > self.player2_score:
-        #     print(f"{self.player1.name} wins the game!")
-        #     pass
-        # elif self.player2_score > self.player1_score:
-        #     print(f"{self.player2.name} wins the game!")
-        #     pass
+        print(f"{self.player1.name}'s score: {self.player1.score}")
+        print(f"{self.player2.name}'s score: {self.player2.score}")
+        print(f"{winner} wins the game!")
         
-        return [self.player1_score, self.player1.collected_cards, self.player2_score, self.player2.collected_cards]
+        self.game_log["final_result"] = {
+            "player1_score": self.player1.score,
+            "player2_score": self.player2.score,
+            "winner": winner
+        }
 
     def calculate_score(self, player: Player, opponent: Player):
         """
