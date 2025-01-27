@@ -1,3 +1,4 @@
+import random
 import string
 from collections import Counter
 from typing import List
@@ -26,32 +27,46 @@ class Game:
         return self.end_set()
 
     def play_set(self):
+        """Play a single set in the game."""
+        # Deal initial cards
         self.player1.draw_cards(self.deck.pick_random_cards(5))
         self.player2.draw_cards(self.deck.pick_random_cards(5))
+
+        # Reset 'has_take' for both players
         self.player1.has_take = False
         self.player2.has_take = False
+
+        # Play until a set-ending condition is met
+        print("set:")
         while not self.check_city_victory() and not self.is_set_over():
-            self.play_turn(self.player1, "play")
-            self.play_turn(self.player2, "play")
-        return
+            # Player 1's turn
+            self.play_turn(self.player1)
+            # Player 2's turn
+            self.play_turn(self.player2)
     
-    def play_turn(self, player: Player, action: string):
+    def play_turn(self, player: Player):
         """Handle the actions taken by the player on their turn."""
         if len(player.hand) == 0: # If player has no more card available, he has to take
             action = "take"
-
+        else:
+            # Randomly decide the action, respecting constraints
+            if player.has_take:  # Player has already "taken"; only "play" is possible
+                action = "play"
+            else:
+                # Randomly choose between "play" and "take"
+                action = random.choices(["play", "take"], weights=[4, 1])[0]
+                
+        print(player.name,":",action)
         if action=="play":
             played_card = player.play_card()
             self.game_line.append(played_card)
-            # print("player :",player.name, "played :",played_card)
-        elif action == "take":
-            self.take_cards_from_game_line(player)
+        elif action == "take" and not player.has_take:
+            self.collect_cards(player)
             player.has_take = True
-            # print("Player's card", player.name,":", player.collected_cards)
         else:
             print("Invalid action. Choose either 'play' or 'take'.")
 
-    def take_cards_from_game_line(self, player: Player):
+    def collect_cards(self, player: Player):
         """
         Allow the player to take up to the last 5 cards from the center line.
         If there are fewer than 5 cards in the game line, take all of them.
